@@ -1,18 +1,21 @@
 import torch
+from collections.abc import Iterable
 
-def gradient_clipping(parameters,max_l2_norm,eps=1e-6):
-    grads = []
-    for p in parameters:
-        if p.grad is not None:
-            grads.append(p.grad.detach().flatten())
-    
-    if not grads:
-        return
-    
-    all_grads=torch.cat(grads)
-    l2_norm=torch.norm(all_grads,p=2)
+def gradient_clipping(
+    parameters:Iterable[torch.nn.Parameter],
+    max_l2_norm:float,
+) -> None:
+    parameters=list(parameters)
 
-    if l2_norm>max_l2_norm:
-        for parameter in parameters:
-            if parameter.grad is not None:
-                parameter.grad.data*=max_l2_norm/(l2_norm+eps)
+    total_norm_squared=sum(
+        torch.sum(param.grad**2)
+        for param in parameters
+        if param.grad is not None
+    )
+
+    total_norm=torch.sqrt(total_norm_squared)
+    if total_norm>max_l2_norm:
+        scale=max_l2_norm/(total_norm+1e-6)
+        for param in parameters:
+            if param.grad is not None:
+                param.grad.mul_(scale)
