@@ -23,6 +23,9 @@ from cs336_basics.transformer_block import TransformerBlock
 from cs336_basics.transformer_lm import TransformerLM
 from cs336_basics.cross_entropy import cross_entropy
 from cs336_basics.gradient_clipping import gradient_clipping
+from cs336_basics.data_loading import data_load
+from cs336_basics.learning_rate_schedule import cosine_annealing
+from cs336_basics.adamw import AdamW
 
 def run_linear(
     d_in: int,
@@ -487,7 +490,7 @@ def run_get_batch(
         is the sampled input sequences, and the second tuple item is the corresponding
         language modeling labels.
     """
-    raise NotImplementedError
+    return data_load(dataset,batch_size,context_length,device)
 
 
 def run_softmax(in_features: Float[Tensor, " ..."], dim: int) -> Float[Tensor, " ..."]:
@@ -540,7 +543,6 @@ def get_adamw_cls() -> Any:
     """
     Returns a torch.optim.Optimizer that implements AdamW.
     """
-    from cs336_basics.adamw import AdamW
     return AdamW
 
 
@@ -569,8 +571,6 @@ def run_get_lr_cosine_schedule(
     Returns:
         Learning rate at the given iteration under the specified schedule.
     """
-    from cs336_basics.learning_rate_schedule import cosine_annealing
-
     return cosine_annealing(
         it,
         max_learning_rate,
