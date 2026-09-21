@@ -27,6 +27,7 @@ from cs336_basics.data_loading import data_load
 from cs336_basics.learning_rate_schedule import cosine_annealing
 from cs336_basics.adamw import AdamW
 from cs336_basics.checkpointing import save_checkpoint
+from cs336_basics.checkpointing import load_checkpoint
 
 def run_linear(
     d_in: int,
@@ -618,7 +619,7 @@ def run_load_checkpoint(
     Returns:
         int: the previously-serialized number of iterations.
     """
-    raise NotImplementedError
+    return load_checkpoint(src,model,optimizer)
 
 
 def get_tokenizer(
