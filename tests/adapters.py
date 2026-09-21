@@ -570,7 +570,13 @@ def run_get_lr_cosine_schedule(
     """
     from cs336_basics.learning_rate_schedule import cosine_annealing
 
-    return cosine_annealing
+    return cosine_annealing(
+        it,
+        max_learning_rate,
+        min_learning_rate,
+        warmup_iters,
+        cosine_cycle_iters,
+    )
 
 
 def run_save_checkpoint(
