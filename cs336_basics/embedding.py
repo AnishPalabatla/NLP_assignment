@@ -12,5 +12,5 @@ class Embedding(nn.Module):
         )
         nn.init.trunc_normal_(self.weight,mean=0.0,std=1.0,a=-3,b=3)
 
-    def forward(self,token_ids: torch.Tensor) -> torch.Tensor:
+    def forward(self,token_ids: torch.Tensor)->torch.Tensor:
         return self.weight[token_ids]
