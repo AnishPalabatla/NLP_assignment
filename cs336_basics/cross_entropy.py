@@ -1,7 +1,7 @@
 import torch
 from einops import rearrange, reduce
 
-def cross_entropy(logits, targets):
+def cross_entropy(logits,targets):
     max_logits=reduce(logits,'b ... v -> b ... 1','max')
     logits=logits-max_logits
     exp_logits=torch.exp(logits)
