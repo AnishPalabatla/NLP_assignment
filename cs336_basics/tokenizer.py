@@ -168,4 +168,3 @@ if __name__ == "__main__":
         text=f.read()
     IDs=tokenizer.encode(text)
     np.save("../results/tokens.npy",np.asarray(IDs))
-
