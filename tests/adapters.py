@@ -28,6 +28,7 @@ from cs336_basics.learning_rate_schedule import cosine_annealing
 from cs336_basics.adamw import AdamW
 from cs336_basics.checkpointing import save_checkpoint
 from cs336_basics.checkpointing import load_checkpoint
+from cs336_basics.silu import silu
 
 def run_linear(
     d_in: int,
@@ -469,7 +470,7 @@ def run_silu(in_features: Float[Tensor, " ..."]) -> Float[Tensor, " ..."]:
         Float[Tensor,"..."]: of with the same shape as `in_features` with the output of applying
         SiLU to each element.
     """
-    raise NotImplementedError
+    return silu(in_features)
 
 
 def run_get_batch(
