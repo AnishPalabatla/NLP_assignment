@@ -308,7 +308,7 @@ class Tokenizer:
 
 
 if __name__=="__main__":
-    special_tokens=["<endoftext>"]
+    special_tokens=["<|endoftext|>"]
 
     tokenizer=Tokenizer.from_files(
         "../results/vocab.json",
