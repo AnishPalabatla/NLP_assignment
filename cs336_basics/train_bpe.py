@@ -102,8 +102,8 @@ def train_bpe(
     # each pair -> the set of pretokens containing it. This lets
     # each merge step touch ONLY the affected pretokens instead
     # of rescanning the entire corpus every iteration (the old
-    # implementation's real bottleneck:O(vocab_size * num_unique
-    # _pretokens) instead of O(vocab_size * avg_affected)).
+    # implementation's real bottleneck:O(vocab_size*num_unique
+    # _pretokens) instead of O(vocab_size*avg_affected)).
     # ---------------------------------------------------------
     pairs_counts=Counter()
     pair_to_pretokens:dict[tuple[bytes, bytes], set]={}
@@ -161,7 +161,7 @@ def train_bpe(
             # -------------------------------------------------
             for i in range(len(pretoken)-1):
                 pair=(pretoken[i], pretoken[i+1])
-                pairs_counts[pair] -= count
+                pairs_counts[pair]-=count
                 if pairs_counts[pair] <= 0:
                     del pairs_counts[pair]
                 pair_to_pretokens.get(pair, set()).discard(pretoken)
@@ -235,4 +235,3 @@ if __name__=="__main__":
             f.write(f"{a.decode('latin1')} {b.decode('latin1')}\n")
 
     print(f"[train_bpe] wrote {vocab_path} and {merges_path}", flush=True)
-    print(f"[train_bpe] final vocab size:{len(vocab)}", flush=True)
