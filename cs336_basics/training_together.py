@@ -56,14 +56,16 @@ wandb.init(
     name="training_together"
 )
 
-input_data=np.load(
+input_data=np.memmapa(
     args.input,
-    mmap_mode="r"
+    dtype=np.uint16,
+    mode="r"
 )
 
 validation_data=np.load(
     args.validation,
-    mmap_mode="r"
+    dtype=np.uint16,
+    mode="r"
 )
 
 
