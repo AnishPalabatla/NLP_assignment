@@ -62,7 +62,7 @@ input_data=np.memmap(
     mode="r"
 )
 
-validation_data=np.load(
+validation_data=np.memmap(
     args.validation,
     dtype=np.uint16,
     mode="r"
