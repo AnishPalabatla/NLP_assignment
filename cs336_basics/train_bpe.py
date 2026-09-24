@@ -4,6 +4,13 @@ import regex as re
 import multiprocessing as mp
 import json
 import os
+import time
+
+# Resolve paths relative to this script's location, not the current working
+# directory -- avoids "file not found" errors when running from a different folder.
+SCRIPT_DIR=os.path.dirname(os.path.abspath(__file__))
+DATA_PATH=os.path.join(SCRIPT_DIR, "..", "data", "TinyStoriesV2-GPT4-train.txt")
+RESULTS_DIR=os.path.join(SCRIPT_DIR, "..", "results")
 
 
 # Parallelize pretoken counting using multiprocessing
@@ -13,7 +20,7 @@ def process_chunk(args):
     # Read file by chunk
     with open(input_path, "rb") as f:
         f.seek(start)
-        chunk=f.read(end - start).decode("utf-8", errors="ignore")
+        chunk=f.read(end-start).decode("utf-8", errors="ignore")
 
     # Split the chunk into pre-tokens based on special tokens
     splits=re.split(
@@ -26,7 +33,7 @@ def process_chunk(args):
     PAT=r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
 
     for split in splits:
-        pretokens += [
+        pretokens+=[
             n.group(0)
             for n in re.finditer(PAT, split)
         ]
@@ -50,13 +57,16 @@ def train_bpe(
 ) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
 
     num_processes=min(mp.cpu_count(), 4)
+    print(f"[train_bpe] cpu_count={mp.cpu_count()}, using {num_processes} processes", flush=True)
 
+    t0=time.time()
     with open(input_path, "rb") as f:
         boundaries=find_chunk_boundaries(
             f,
             num_processes,
             "<|endoftext|>".encode("utf-8")
         )
+    print(f"[train_bpe] chunk boundaries computed in {time.time()-t0:.1f}s", flush=True)
 
     # Multiprocessing to process chunks
     chunk_args=[
@@ -64,14 +74,17 @@ def train_bpe(
         for start, end in zip(boundaries[:-1], boundaries[1:])
     ]
 
+    print("[train_bpe] starting pre-tokenization (pool.map)...", flush=True)
+    t0=time.time()
     with mp.Pool(processes=num_processes) as pool:
         results=pool.map(process_chunk, chunk_args)
+    print(f"[train_bpe] pre-tokenization done in {time.time()-t0:.1f}s", flush=True)
 
     # Combine counts from all processes
     all_pretoken_counts=Counter()
-
     for c in results:
         all_pretoken_counts.update(c)
+    print(f"[train_bpe] {len(all_pretoken_counts)} unique pretokens", flush=True)
 
     # Initialize vocabulary
     vocab={
@@ -85,25 +98,36 @@ def train_bpe(
     merges=[]
 
     # ---------------------------------------------------------
-    # Initialize pair counts ONCE.
-    #
-    # The old implementation recalculated every pair from
-    # every pre-token on every merge. That was the main
-    # performance bottleneck.
+    # Initialize pair counts ONCE, and also build an index from
+    # each pair -> the set of pretokens containing it. This lets
+    # each merge step touch ONLY the affected pretokens instead
+    # of rescanning the entire corpus every iteration (the old
+    # implementation's real bottleneck:O(vocab_size * num_unique
+    # _pretokens) instead of O(vocab_size * avg_affected)).
     # ---------------------------------------------------------
     pairs_counts=Counter()
+    pair_to_pretokens:dict[tuple[bytes, bytes], set]={}
 
     for pretoken, count in all_pretoken_counts.items():
         if len(pretoken)<2:
             continue
 
-        for i in range(len(pretoken) - 1):
+        seen_pairs_here=set()
+        for i in range(len(pretoken)-1):
             pair=(pretoken[i], pretoken[i+1])
-            pairs_counts[pair] += count
+            pairs_counts[pair]+=count
+            seen_pairs_here.add(pair)
+
+        for pair in seen_pairs_here:
+            pair_to_pretokens.setdefault(pair, set()).add(pretoken)
 
     # ---------------------------------------------------------
     # Merge pairs until vocabulary size is reached
     # ---------------------------------------------------------
+    merge_num=0
+    t0=time.time()
+    target_merges=vocab_size-len(vocab)
+
     while len(vocab)<vocab_size:
 
         # Break if there are no pairs left
@@ -111,10 +135,7 @@ def train_bpe(
             break
 
         # Find the most common pair.
-        #
-        # This preserves the original tie-breaking behavior:
-        # highest frequency first, then lexicographically
-        # largest pair.
+        # Tie-breaking:highest frequency first, then lexicographically largest pair.
         most_common_pair=max(
             pairs_counts,
             key=lambda x:(pairs_counts[x], x)
@@ -123,106 +144,65 @@ def train_bpe(
         merges.append(most_common_pair)
 
         # Create the new token
-        new_token=(
-            most_common_pair[0]
-           +most_common_pair[1]
-        )
-
+        new_token=most_common_pair[0]+most_common_pair[1]
         vocab[len(vocab)]=new_token
 
-        new_pretoken_counts={}
+        # Only the pretokens known to contain this pair need updating.
+        affected=pair_to_pretokens.pop(most_common_pair, set())
 
-        # -----------------------------------------------------
-        # Update only the pair counts affected by this merge.
-        # -----------------------------------------------------
-        for pretoken, count in all_pretoken_counts.items():
-
-            if len(pretoken)<2:
-                new_pretoken_counts[pretoken]=(
-                    new_pretoken_counts.get(pretoken, 0)
-                   +count
-                )
-                continue
-
-            # Check whether this pre-token contains the pair
-            contains_pair=False
-
-            for i in range(len(pretoken) - 1):
-                if (
-                    pretoken[i],
-                    pretoken[i+1]
-                )==most_common_pair:
-                    contains_pair=True
-                    break
-
-            # If this pre-token is unaffected, keep it unchanged
-            if not contains_pair:
-                new_pretoken_counts[pretoken]=(
-                    new_pretoken_counts.get(pretoken, 0)
-                   +count
-                )
+        for pretoken in affected:
+            count=all_pretoken_counts.pop(pretoken, None)
+            if count is None:
                 continue
 
             # -------------------------------------------------
-            # Remove the old pair contributions from the global
-            # pair counts.
+            # Remove this pretoken's old pair contributions from
+            # the global counts / index.
             # -------------------------------------------------
-            for i in range(len(pretoken) - 1):
-                pair=(
-                    pretoken[i],
-                    pretoken[i+1]
-                )
-
+            for i in range(len(pretoken)-1):
+                pair=(pretoken[i], pretoken[i+1])
                 pairs_counts[pair] -= count
-
                 if pairs_counts[pair] <= 0:
                     del pairs_counts[pair]
+                pair_to_pretokens.get(pair, set()).discard(pretoken)
 
             # -------------------------------------------------
-            # Apply the merge to this pre-token.
+            # Apply a single left-to-right merge pass to this
+            # pretoken (correct behavior even with repeated pairs,
+            # e.g. "aaa" -> pair ('a','a') occurring twice).
             # -------------------------------------------------
             new_pretoken=[]
-
             i=0
-
             while i<len(pretoken):
-
-                if (
-                    i<len(pretoken) - 1
-                    and (
-                        pretoken[i],
-                        pretoken[i+1]
-                    )==most_common_pair
-                ):
+                if i<len(pretoken)-1 and (pretoken[i], pretoken[i+1])==most_common_pair:
                     new_pretoken.append(new_token)
-                    i += 2
-
+                    i+=2
                 else:
                     new_pretoken.append(pretoken[i])
-                    i += 1
-
+                    i+=1
             new_pretoken=tuple(new_pretoken)
 
-            # Combine counts if multiple old pre-tokens become
-            # the same new pre-token.
-            new_pretoken_counts[new_pretoken]=(
-                new_pretoken_counts.get(new_pretoken, 0)
-               +count
+            # Combine counts if multiple old pretokens collapse to the same new one.
+            all_pretoken_counts[new_pretoken]=all_pretoken_counts.get(new_pretoken, 0)+count
+
+            # -------------------------------------------------
+            # Add the new pretoken's pair contributions.
+            # -------------------------------------------------
+            for i in range(len(new_pretoken)-1):
+                pair=(new_pretoken[i], new_pretoken[i+1])
+                pairs_counts[pair]+=count
+                pair_to_pretokens.setdefault(pair, set()).add(new_pretoken)
+
+        merge_num+=1
+        if merge_num%200==0 or merge_num==target_merges:
+            elapsed=time.time()-t0
+            print(
+                f"[train_bpe] merge {merge_num}/{target_merges}, "
+                f"vocab_size={len(vocab)}, elapsed={elapsed:.1f}s",
+                flush=True
             )
 
-            # -------------------------------------------------
-            # Add the new pair contributions.
-            # -------------------------------------------------
-            for i in range(len(new_pretoken) - 1):
-                pair=(
-                    new_pretoken[i],
-                    new_pretoken[i+1]
-                )
-
-                pairs_counts[pair] += count
-
-        # Replace the old pre-token dictionary
-        all_pretoken_counts=new_pretoken_counts
+    print(f"[train_bpe] merging complete:{merge_num} merges in {time.time()-t0:.1f}s", flush=True)
 
     return vocab, merges
 
@@ -231,36 +211,28 @@ if __name__=="__main__":
 
     special_tokens=["<|endoftext|>"]
 
-    vocab, merges=train_bpe(
-        "data/TinyStoriesV2-GPT4-train.txt",
-        10000,
-        special_tokens
-    )
+    print(f"[train_bpe] data path:{DATA_PATH}", flush=True)
+    if not os.path.exists(DATA_PATH):
+        raise FileNotFoundError(f"Training data not found at {DATA_PATH}")
 
-    os.makedirs("results", exist_ok=True)
+    vocab, merges=train_bpe(DATA_PATH, 10000, special_tokens)
 
-    with open(
-        "results/vocab.json",
-        "w",
-        encoding="utf-8"
-    ) as f:
+    os.makedirs(RESULTS_DIR, exist_ok=True)
+
+    vocab_path=os.path.join(RESULTS_DIR, "vocab.json")
+    merges_path=os.path.join(RESULTS_DIR, "merges.txt")
+
+    with open(vocab_path, "w", encoding="utf-8") as f:
         json.dump(
-            {
-                v.decode("latin1"):k
-                for k, v in vocab.items()
-            },
+            {v.decode("latin1"):k for k, v in vocab.items()},
             f,
             ensure_ascii=False,
             indent=2
         )
 
-    with open(
-        "results/merges.txt",
-        "w",
-        encoding="utf-8"
-    ) as f:
+    with open(merges_path, "w", encoding="utf-8") as f:
         for a, b in merges:
-            f.write(
-                f"{a.decode('latin1')} "
-                f"{b.decode('latin1')}\n"
-            )
+            f.write(f"{a.decode('latin1')} {b.decode('latin1')}\n")
+
+    print(f"[train_bpe] wrote {vocab_path} and {merges_path}", flush=True)
+    print(f"[train_bpe] final vocab size:{len(vocab)}", flush=True)
