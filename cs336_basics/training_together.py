@@ -56,7 +56,7 @@ wandb.init(
     name="training_together"
 )
 
-input_data=np.memmapa(
+input_data=np.memmap(
     args.input,
     dtype=np.uint16,
     mode="r"
