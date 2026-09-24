@@ -66,25 +66,25 @@ def train_bpe(
             num_processes,
             "<|endoftext|>".encode("utf-8")
         )
-    print(f"[train_bpe] chunk boundaries computed in {time.time()-t0:.1f}s", flush=True)
+        print(f"[train_bpe] chunk boundaries computed in {time.time()-t0:.1f}s", flush=True)
 
-    # Multiprocessing to process chunks
-    chunk_args=[
-        (input_path, start, end, special_tokens)
-        for start, end in zip(boundaries[:-1], boundaries[1:])
-    ]
+        # Multiprocessing to process chunks
+        chunk_args=[
+            (input_path, start, end, special_tokens)
+            for start, end in zip(boundaries[:-1], boundaries[1:])
+        ]
 
-    print("[train_bpe] starting pre-tokenization (pool.map)...", flush=True)
-    t0=time.time()
-    with mp.Pool(processes=num_processes) as pool:
-        results=pool.map(process_chunk, chunk_args)
-    print(f"[train_bpe] pre-tokenization done in {time.time()-t0:.1f}s", flush=True)
+        print("[train_bpe] starting pre-tokenization (pool.map)...", flush=True)
+        t0=time.time()
+        with mp.Pool(processes=num_processes) as pool:
+            results=pool.map(process_chunk, chunk_args)
+        print(f"[train_bpe] pre-tokenization done in {time.time()-t0:.1f}s", flush=True)
 
-    # Combine counts from all processes
-    all_pretoken_counts=Counter()
-    for c in results:
-        all_pretoken_counts.update(c)
-    print(f"[train_bpe] {len(all_pretoken_counts)} unique pretokens", flush=True)
+        # Combine counts from all processes
+        all_pretoken_counts=Counter()
+        for c in results:
+            all_pretoken_counts.update(c)
+        print(f"[train_bpe] {len(all_pretoken_counts)} unique pretokens", flush=True)
 
     # Initialize vocabulary
     vocab={
