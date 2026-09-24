@@ -20,6 +20,7 @@ parser.add_argument("--validation",type=str,required=True)
 parser.add_argument("--checkpoint",type=str,required=True)
 
 parser.add_argument("--batch_size",type=int,default=256)
+parser.add_argument("--micro_batch_size",type=int,default=16)
 parser.add_argument("--context_length",type=int,default=256)
 parser.add_argument("--vocab_size",type=int,default=10000)
 
@@ -46,6 +47,16 @@ parser.add_argument("--eval_batches",type=int,default=10)
 
 args=parser.parse_args()
 
+if args.batch_size%args.micro_batch_size != 0:
+    raise ValueError(
+        "batch_size must be divisible by micro_batch_size"
+    )
+
+grad_accum_steps=args.batch_size // args.micro_batch_size
+
+print(f"Effective batch size: {args.batch_size}")
+print(f"Micro batch size: {args.micro_batch_size}")
+print(f"Gradient accumulation steps: {grad_accum_steps}")
 
 device=torch.device(
     "cuda" if torch.cuda.is_available() else "cpu"
@@ -68,7 +79,6 @@ validation_data=np.memmap(
     mode="r"
 )
 
-
 transformer_lm=TransformerLM(
     args.vocab_size,
     args.context_length,
@@ -79,7 +89,6 @@ transformer_lm=TransformerLM(
     args.rope_theta,
 ).to(device)
 
-
 optimizer=AdamW(
     transformer_lm.parameters(),
     args.lr,
@@ -87,6 +96,7 @@ optimizer=AdamW(
     args.eps,
     args.weight_decay,
 )
+
 if os.path.exists(args.checkpoint):
     iteration=load_checkpoint(
         args.checkpoint,
@@ -95,6 +105,7 @@ if os.path.exists(args.checkpoint):
     )
 else:
     iteration=0
+
 
 @torch.no_grad()
 def evaluate(model,dataset,num_batches):
@@ -105,7 +116,7 @@ def evaluate(model,dataset,num_batches):
     for _ in range(num_batches):
         batch_data=data_load(
             dataset,
-            args.batch_size,
+            args.micro_batch_size,
             args.context_length,
             device,
         )
@@ -125,9 +136,11 @@ def evaluate(model,dataset,num_batches):
 
     return average_loss
 
+
 transformer_lm.train()
 
 for t in range(iteration,args.max_step):
+
     lr=cosine_annealing(
         t,
         args.lr,
@@ -139,39 +152,52 @@ for t in range(iteration,args.max_step):
     for group in optimizer.param_groups:
         group["lr"]=lr
 
-    batch_data=data_load(
-        input_data,
-        args.batch_size,
-        args.context_length,
-        device,
-    )
-
     optimizer.zero_grad()
 
-    logits=transformer_lm(
-        batch_data[0]
-    )
+    total_loss=0.0
 
-    loss=cross_entropy(
-        logits,
-        batch_data[1],
-    )
-    loss.backward()
+    for _ in range(grad_accum_steps):
+
+        batch_data=data_load(
+            input_data,
+            args.micro_batch_size,
+            args.context_length,
+            device,
+        )
+
+        logits=transformer_lm(
+            batch_data[0]
+        )
+
+        micro_loss=cross_entropy(
+            logits,
+            batch_data[1],
+        )
+
+        total_loss+=micro_loss.item()
+
+        micro_loss=micro_loss/grad_accum_steps
+
+        micro_loss.backward()
+
+    loss=total_loss/grad_accum_steps
 
     gradient_clipping(
         transformer_lm.parameters(),
         args.max_l2_norm,
     )
+
     optimizer.step()
+
     wandb.log({
-        "train_loss":loss.item(),
-        "learning_rate":lr,
-        "iteration":t,
+        "train_loss": loss,
+        "learning_rate": lr,
+        "iteration": t,
     })
 
     print(
         f"iteration {t}:"
-        f"train_loss={loss.item():.4f},"
+        f"train_loss={loss:.4f},"
         f"lr={lr:.6e}"
     )
 
@@ -184,8 +210,8 @@ for t in range(iteration,args.max_step):
         )
 
         wandb.log({
-            "validation_loss":validation_loss,
-            "iteration":t,
+            "validation_loss": validation_loss,
+            "iteration": t,
         })
 
         print(
