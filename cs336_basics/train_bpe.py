@@ -56,7 +56,7 @@ def train_bpe(
     special_tokens:list[str]
 ) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
 
-    num_processes=min(mp.cpu_count(), 4)
+    num_processes=min(mp.cpu_count(),8)
     print(f"[train_bpe] cpu_count={mp.cpu_count()}, using {num_processes} processes", flush=True)
 
     t0=time.time()
