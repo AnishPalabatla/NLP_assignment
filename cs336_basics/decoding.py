@@ -1,4 +1,4 @@
-import torch
+import torc
 import argparse
 import json
 from cs336_basics.softmax import softmax
@@ -46,7 +46,7 @@ if __name__=="__main__":
     parser.add_argument("--max_token",type=int,default=200)
     parser.add_argument("--temp",type=float,default=1.0)
     parser.add_argument("--topp",type=float,default=0.9)
-    parser.add_argument("--vocab_size",type=int,default=10000)
+    parser.add_argument("--vocab_size",type=int,default=32000)
     parser.add_argument("--context_length",type=int,default=256)
     parser.add_argument("--d_model",type=int,default=512)
     parser.add_argument("--num_layers",type=int,default=4)
