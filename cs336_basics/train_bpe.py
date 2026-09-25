@@ -307,33 +307,87 @@ def train_bpe(
 
 if __name__=="__main__":
 
-    SCRIPT_DIR=os.path.dirname(os.path.abspath(__file__))
-    DATA_PATH=os.path.join(SCRIPT_DIR, "..", "data", "TinyStoriesV2-GPT4-train.txt")
-    RESULTS_DIR=os.path.join(SCRIPT_DIR, "..", "results")
+    import argparse
+
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument(
+        "--input",
+        type=str,
+        required=True,
+    )
+
+    parser.add_argument(
+        "--vocab-size",
+        type=int,
+        required=True,
+    )
+
+    parser.add_argument(
+        "--output-vocab",
+        type=str,
+        required=True,
+    )
+
+    parser.add_argument(
+        "--output-merges",
+        type=str,
+        required=True,
+    )
+
+    parser.add_argument(
+        "--num-processes",
+        type=int,
+        default=None,
+    )
+
+    args = parser.parse_args()
 
     special_tokens=["<|endoftext|>"]
 
-    print(f"[train_bpe] data path: {DATA_PATH}", flush=True)
-    if not os.path.exists(DATA_PATH):
-        raise FileNotFoundError(f"Training data not found at {DATA_PATH}")
+    print(
+        f"[train_bpe] data path: {args.input}",
+        flush=True
+    )
 
-    vocab, merges=train_bpe(DATA_PATH, 10000, special_tokens)
+    if not os.path.exists(args.input):
+        raise FileNotFoundError(
+            f"Training data not found at {args.input}"
+        )
 
-    os.makedirs(RESULTS_DIR, exist_ok=True)
+    vocab, merges=train_bpe(
+        args.input,
+        args.vocab_size,
+        special_tokens,
+        num_processes=args.num_processes,
+    )
 
-    vocab_path=os.path.join(RESULTS_DIR, "vocab.json")
-    merges_path=os.path.join(RESULTS_DIR, "merges.txt")
+    os.makedirs(
+        os.path.dirname(args.output_vocab) or ".",
+        exist_ok=True,
+    )
 
-    with open(vocab_path, "w", encoding="utf-8") as f:
+    os.makedirs(
+        os.path.dirname(args.output_merges) or ".",
+        exist_ok=True,
+    )
+
+    with open(args.output_vocab, "w", encoding="utf-8") as f:
         json.dump(
             {v.decode("latin1"): k for k, v in vocab.items()},
             f,
             ensure_ascii=False,
-            indent=2
+            indent=2,
         )
 
-    with open(merges_path, "w", encoding="utf-8") as f:
+    with open(args.output_merges, "w", encoding="utf-8") as f:
         for a, b in merges:
-            f.write(f"{a.decode('latin1')} {b.decode('latin1')}\n")
+            f.write(
+                f"{a.decode('latin1')} {b.decode('latin1')}\n"
+            )
 
-    print(f"[train_bpe] wrote {vocab_path} and {merges_path}", flush=True)
+    print(
+        f"[train_bpe] wrote {args.output_vocab} "
+        f"and {args.output_merges}",
+        flush=True,
+    )
