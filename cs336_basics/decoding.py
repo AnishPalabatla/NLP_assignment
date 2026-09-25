@@ -1,4 +1,4 @@
-import torc
+import torch
 import argparse
 import json
 from cs336_basics.softmax import softmax
