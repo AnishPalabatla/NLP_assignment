@@ -1,20 +1,3 @@
-"""
-Encode a text file into a sequence of token IDs using a trained BPE tokenizer,
-and serialize the result as a flat binary file of uint16 values.
-
-This is the "run your trained tokenizer on the dataset" step (Assignment
-Overview step 2 / Section 2.7d). The output file can later be loaded with
-np.memmap(path, dtype=np.uint16, mode="r") in your data loader, without
-ever pulling the whole array into memory (either here or at training time).
-
-Usage:
-    uv run python -m cs336_basics.encode_dataset \
-        --input data/TinyStoriesV2-GPT4-train.txt \
-        --vocab results/vocab.json \
-        --merges results/merges.txt \
-        --special-tokens "<|endoftext|>" \
-        --output data/tinystories_train_ids.bin
-"""
 import argparse
 import time
 
@@ -31,12 +14,7 @@ def encode_file_to_uint16(
     output_path: str,
     chunk_size: int = 1_000_000,
 ) -> int:
-    """
-    Stream-encode `input_path` with the tokenizer built from `vocab_path` /
-    `merges_path`, writing token IDs as raw uint16 bytes to `output_path`.
 
-    Returns the total number of tokens written.
-    """
     tokenizer = Tokenizer.from_files(vocab_path, merges_path, special_tokens)
 
     total_tokens = 0

@@ -13,39 +13,20 @@ from cs336_basics.learning_rate_schedule import cosine_annealing
 from cs336_basics.gradient_clipping import gradient_clipping
 
 
-parser=argparse.ArgumentParser()
+parser = argparse.ArgumentParser()
 
+parser.add_argument("--config",type=str,required=True)
 parser.add_argument("--input",type=str,required=True)
 parser.add_argument("--validation",type=str,required=True)
 parser.add_argument("--checkpoint",type=str,required=True)
 
-parser.add_argument("--batch_size",type=int,default=256)
-parser.add_argument("--micro_batch_size",type=int,default=16)
-parser.add_argument("--context_length",type=int,default=256)
-parser.add_argument("--vocab_size",type=int,default=10000)
-
-parser.add_argument("--d_model",type=int,default=512)
-parser.add_argument("--num_layers",type=int,default=4)
-parser.add_argument("--num_heads",type=int,default=16)
-parser.add_argument("--d_ff",type=int,default=1344)
-parser.add_argument("--rope_theta",type=float,default=10000)
-
-parser.add_argument("--lr",type=float,default=1e-3)
-parser.add_argument("--betas",type=float,nargs=2,default=(0.9,0.999))
-parser.add_argument("--weight_decay",type=float,default=0.01)
-parser.add_argument("--eps",type=float,default=1e-8)
-
-parser.add_argument("--max_step",type=int,default=5000)
-parser.add_argument("--max_l2_norm",type=float,default=1.0)
-
-parser.add_argument("--min_learning_rate",type=float,default=1e-5)
-parser.add_argument("--warmup_iters",type=int,default=500)
-parser.add_argument("--cosine_cycle_iters",type=int,default=5000)
-
-parser.add_argument("--eval_interval",type=int,default=100)
-parser.add_argument("--eval_batches",type=int,default=10)
-
 args=parser.parse_args()
+
+with open(args.config,"r") as f:
+    config = json.load(f)
+
+for key,value in config.items():
+    setattr(args, key, value)
 
 if args.batch_size%args.micro_batch_size != 0:
     raise ValueError(
@@ -64,7 +45,7 @@ device=torch.device(
 
 wandb.init(
     project="cs336",
-    name="training_together"
+    name=os.path.basename(args.config).replace(".json", "")
 )
 
 input_data=np.memmap(
@@ -219,7 +200,7 @@ for t in range(iteration,args.max_step):
             f"validation_loss={validation_loss:.4f}"
         )
 
-    if t%100==0:
+    if t%100==0 or t==args.max_step-1:
         save_checkpoint(
             transformer_lm,
             optimizer,
